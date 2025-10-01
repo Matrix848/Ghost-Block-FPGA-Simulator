@@ -1,9 +1,10 @@
 use crate::fpga::cell::{Cell, CellIO};
+use serde::{Deserialize, Serialize};
 
 #[allow(unused)]
 pub(crate) mod cell;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Grid {
     width: usize,
     height: usize,
@@ -12,17 +13,7 @@ pub struct Grid {
 
 impl Grid {
     fn new(width: usize, height: usize) -> Self {
-        let order_1 = crate::fpga::cell::ActivationOrder::new([
-            crate::fpga::cell::Priorities::ROW1,
-            crate::fpga::cell::Priorities::ROW2,
-            crate::fpga::cell::Priorities::COLUMN1,
-            crate::fpga::cell::Priorities::COLUMN2,
-        ])
-        .unwrap();
-
-        let init = Cell::new(
-            order_1, 2, false, false, false, 2, false, false, false, 2, 2,
-        );
+        let init = Cell::default();
 
         Self {
             width,
@@ -56,7 +47,6 @@ pub struct FPGA {
 #[derive(Debug)]
 pub enum Error {
     WrongInputSize { expected: usize, got: usize },
-    // ... other kinds of errors
 }
 
 impl FPGA {
@@ -85,7 +75,7 @@ impl FPGA {
                 column_2,
                 row_1,
                 row_2,
-            } = self.grid.get(j, i).unwrap().eval(CellIO {
+            } = self.grid.get(j, i).unwrap().eval_cell(CellIO {
                 column_1: input[2 * i],
                 column_2: input[2 * i + 1],
                 row_1: input[self.grid.width - 2],

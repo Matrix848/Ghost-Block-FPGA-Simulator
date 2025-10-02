@@ -5,10 +5,10 @@ use std::collections::HashSet;
 #[repr(u8)]
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Selector {
-    Column1 = 0,
-    Column2 = 1,
-    Row1 = 2,
-    Row2 = 3,
+    Column1,
+    Column2,
+    Row1,
+    Row2,
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
@@ -35,77 +35,16 @@ impl ActivationOrder {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
-pub struct CellIO {
-    pub column_1: bool,
-    pub column_2: bool,
-    pub row_1: bool,
-    pub row_2: bool,
-}
-
-bitflags! {
-     #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
-    pub struct CellFlags: u16 {
-        const JC1_R1= 1 << 0;
-        const JC1_R2= 1 << 1;
-        const JC2_R1= 1 << 2;
-        const JC2_R2= 1 << 3;
-        const NOT_C1 = 1 << 4;
-        const NOT_C2= 1 << 5;
-        const C1_OUT = 1 << 6;
-        const C2_OUT= 1 << 7;
-        const R1_OUT= 1 << 8;
-        const R2_OUT= 1 << 9;
-        const STILL_C1 = 1 << 10;
-        const STILL_C2 = 1 << 11;
-        const STILL_R1 = 1 << 12;
-    }
-}
-
-impl Default for CellFlags {
-    fn default() -> Self {
-        let mut flags = CellFlags::empty();
-        flags
-            .set_range(10, 3)
-            .expect("Unexpected error: invalid range");
-        flags
-    }
-}
-
-impl CellFlags {
-    // Sets the various STILL_XY as 1, this is the intended method to create CellFlags
-    fn from_bits_checked(bits: u16) -> Self {
-        let mut flags = CellFlags::from_bits_truncate(bits);
-        flags
-            .set_range(10, 3)
-            .expect("Unexpected error: invalid range");
-        flags
-    }
-
-    fn set_range(&mut self, pos: u8, range: u8) -> Result<(), &'static str> {
-        if pos > 12 {
-            return Err("Position out of range");
-        }
-        if range == 0 || pos + range > 13 {
-            return Err("Invalid range");
-        }
-        let mask: u16 = ((1 << range) - 1) << pos;
-        let new_flags = CellFlags::from_bits_truncate(self.bits() | mask);
-        *self = new_flags;
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 struct TargetGroup<const N: usize> {
-    target: Selector,
+    target: u8,
     flags: [CellFlags; N],
 }
 
 // Define your groups
 impl TargetGroup<5> {
     const C1: TargetGroup<5> = TargetGroup {
-        target: Selector::Column1,
+        target: 0,
         flags: [
             CellFlags::JC1_R1,
             CellFlags::JC1_R2,
@@ -116,7 +55,7 @@ impl TargetGroup<5> {
     };
 
     const C2: TargetGroup<5> = TargetGroup {
-        target: Selector::Column2,
+        target: 1,
         flags: [
             CellFlags::JC2_R1,
             CellFlags::JC2_R2,
@@ -138,11 +77,11 @@ impl From<TargetGroup<5>> for TargetGroup<3> {
 
 impl TargetGroup<3> {
     const R1: TargetGroup<3> = TargetGroup {
-        target: Selector::Row1,
+        target: 2,
         flags: [CellFlags::JC1_R1, CellFlags::JC2_R1, CellFlags::R1_OUT],
     };
     const R2: TargetGroup<3> = TargetGroup {
-        target: Selector::Row2,
+        target: 3,
         flags: [CellFlags::JC1_R2, CellFlags::JC2_R2, CellFlags::R2_OUT],
     };
 }
@@ -156,13 +95,86 @@ impl Fills {
     }
 
     #[inline]
-    fn set(&mut self, target: Selector, val: u8) {
+    fn set(&mut self, target: u8, val: u8) {
         self.0[target as usize] = val;
     }
 
     #[inline]
-    fn get(&self, target: Selector) -> u8 {
+    fn get(&self, target: u8) -> u8 {
         self.0[target as usize]
+    }
+}
+
+bitflags! {
+    #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
+    pub struct CellIO: u8 {
+        const COLUMN_1 = 1 << 0;
+        const COLUMN_2 = 1 << 1;
+        const ROW_1 = 1 << 2;
+        const ROW_2 = 1 << 3;
+    }
+}
+
+impl CellIO {
+    pub fn new(c1: bool, c2: bool, r1: bool, r2: bool) -> Self {
+        let mut var = CellIO::empty();
+        var.set(CellIO::COLUMN_1, c1);
+        var.set(CellIO::COLUMN_2, c2);
+        var.set(CellIO::ROW_1, r1);
+        var.set(CellIO::ROW_2, r2);
+        var
+    }
+}
+
+bitflags! {
+     #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+    pub struct CellFlags: u16 {
+        const JC1_R1= 1 << 0;
+        const JC1_R2= 1 << 1;
+        const JC2_R1= 1 << 2;
+        const JC2_R2= 1 << 3;
+        const NOT_C1 = 1 << 4;
+        const NOT_C2= 1 << 5;
+        const C1_OUT = 1 << 6;
+        const C2_OUT= 1 << 7;
+        const R1_OUT= 1 << 8;
+        const R2_OUT= 1 << 9;
+        const STILL_C1 = 1 << 10;
+        const STILL_C2 = 1 << 11;
+        const STILL_R1 = 1 << 12;
+    }
+}
+
+macro_rules! impl_set_range {
+    ( $( $flags:ty ),+ ) => {
+        $(
+            impl $flags {
+                pub fn set_range(&mut self, pos: u8, range: u8) {
+                    let mask = (((1 << range) - 1) << pos) as <$flags as bitflags::Flags>::Bits;
+                    let new_flags = <$flags>::from_bits_truncate(self.bits() | mask);
+                    *self = new_flags;
+                }
+            }
+        )+
+    };
+}
+
+impl_set_range!(CellIO, CellFlags);
+
+impl Default for CellFlags {
+    fn default() -> Self {
+        let mut flags = CellFlags::empty();
+        flags.set_range(10, 3);
+        flags
+    }
+}
+
+impl CellFlags {
+    // Sets the various STILL_XY as 1, this is the intended method to create CellFlags
+    fn from_bits_checked(bits: u16) -> Self {
+        let mut flags = CellFlags::from_bits_truncate(bits);
+        flags.set_range(10, 3);
+        flags
     }
 }
 
@@ -178,9 +190,7 @@ impl Cell {
 
     pub fn new(activation_order: &ActivationOrder, flags: &CellFlags, fills: Fills) -> Self {
         let mut flags = flags.clone();
-        flags
-            .set_range(10, 3)
-            .expect("Unexpected error: invalid range");
+        flags.set_range(10, 3);
         Self {
             activation_order: activation_order.clone().clone(),
             flags,
@@ -243,32 +253,39 @@ impl Cell {
         out
     }
 
-    pub fn eval_cell(&self, input: CellIO) -> CellIO {
+    pub fn eval_cell(&self, mut input: CellIO) -> CellIO {
         let mut rtm_cell = self.clone();
-        let mut output = CellIO {
-            column_1: true,
-            column_2: true,
-            row_1: true,
-            row_2: true,
-        };
 
         for p in rtm_cell.activation_order.0.clone().iter() {
             match p {
                 Selector::Column1 => {
-                    output.column_1 = rtm_cell.sim_gate(input.column_1, TargetGroup::C1);
+                    input.set(
+                        CellIO::COLUMN_1,
+                        rtm_cell.sim_gate(input.contains(CellIO::COLUMN_1), TargetGroup::C1),
+                    );
                 }
                 Selector::Column2 => {
-                    output.column_2 = rtm_cell.sim_gate(input.column_2, TargetGroup::C2);
+                    input.set(
+                        CellIO::COLUMN_2,
+                        rtm_cell.sim_gate(input.contains(CellIO::COLUMN_2), TargetGroup::C2),
+                    );
                 }
                 Selector::Row1 => {
-                    output.row_1 = rtm_cell.sim_row1(input.row_1);
+                    input.set(
+                        CellIO::ROW_1,
+                        rtm_cell.sim_row1(input.contains(CellIO::ROW_1)),
+                    );
                 }
+
                 Selector::Row2 => {
-                    output.row_2 = rtm_cell.sim_row2(input.row_2);
+                    input.set(
+                        CellIO::ROW_2,
+                        rtm_cell.sim_row2(input.contains(CellIO::ROW_2)),
+                    );
                 }
             }
         }
-        output
+        input
     }
 }
 
@@ -288,9 +305,7 @@ mod cell_tests {
             not_c2: bool,
         ) -> Self {
             let mut flags = CellFlags::default();
-            flags
-                .set_range(6, 4)
-                .expect("Unexpected error: invalid range");
+            flags.set_range(6, 4);
             flags.set(CellFlags::JC1_R1, jc1_r1);
             flags.set(CellFlags::JC1_R2, jc1_r2);
             flags.set(CellFlags::JC2_R1, jc2_r1);
@@ -361,21 +376,11 @@ mod cell_tests {
 
         let cell = Cell::new(&order, &flags, fills);
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, false, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(false, false, false, false)
         );
     }
 
@@ -395,38 +400,18 @@ mod cell_tests {
 
         let cell = Cell::new(&order, &flags, fills);
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, false, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(false, false, false, false)
         );
 
-        let input = CellIO {
-            column_1: true,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(true, false, false, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(true, false, false, false)
         );
     }
 
@@ -449,60 +434,27 @@ mod cell_tests {
 
         let cell = Cell::new(&order, &flags, fills);
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, false, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(true, false, false, false)
         );
 
-        let input = CellIO {
-            column_1: true,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(true, false, false, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(true, false, false, false)
         );
 
         let fills = Fills::new(2, 0, 5, 0);
 
         let cell = Cell::new(&order, &flags, fills);
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, false, false);
 
-        assert_eq!(
-            cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: true,
-                row_2: false,
-            }
-        );
+        assert_eq!(cell.eval_cell(input), CellIO::new(true, false, true, false));
     }
 
     #[test]
@@ -521,41 +473,18 @@ mod cell_tests {
 
         let cell = Cell::new(&order, &flags, fills);
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, false, false);
 
         cell.eval_cell(input);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(false, false, false, false)
         );
 
-        let input = CellIO {
-            column_1: true,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(true, false, false, false);
 
-        assert_eq!(
-            cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: true,
-                row_2: false,
-            }
-        );
+        assert_eq!(cell.eval_cell(input), CellIO::new(true, false, true, false));
     }
 
     #[test]
@@ -574,41 +503,18 @@ mod cell_tests {
 
         let cell = Cell::new(&order, &flags, fills);
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, false, false);
 
         cell.eval_cell(input);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(false, false, false, false)
         );
 
-        let input = CellIO {
-            column_1: true,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(true, false, false, false);
 
-        assert_eq!(
-            cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: true,
-                row_2: true,
-            }
-        );
+        assert_eq!(cell.eval_cell(input), CellIO::new(true, false, true, true));
     }
 
     #[test]
@@ -627,73 +533,30 @@ mod cell_tests {
 
         let cell = Cell::new(&order, &flags, fills);
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, false, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(false, false, false, false)
         );
 
-        let input = CellIO {
-            column_1: true,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(true, false, false, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(false, false, false, false)
         );
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: true,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, true, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: true,
-                row_2: false,
-            }
+            CellIO::new(false, false, true, false)
         );
 
-        let input = CellIO {
-            column_1: true,
-            column_2: false,
-            row_1: true,
-            row_2: false,
-        };
+        let input = CellIO::new(true, false, true, false);
 
-        assert_eq!(
-            cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: true,
-                row_2: true,
-            }
-        );
+        assert_eq!(cell.eval_cell(input), CellIO::new(true, false, true, true));
     }
 
     #[test]
@@ -712,73 +575,24 @@ mod cell_tests {
 
         let cell = Cell::new(&order, &flags, fills);
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, false, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(false, false, false, false)
         );
 
-        let input = CellIO {
-            column_1: true,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(true, false, false, false);
 
-        assert_eq!(
-            cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: false,
-                row_2: true,
-            }
-        );
+        assert_eq!(cell.eval_cell(input), CellIO::new(true, false, false, true));
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: true,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, true, false);
 
-        assert_eq!(
-            cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: true,
-                row_2: true,
-            }
-        );
+        assert_eq!(cell.eval_cell(input), CellIO::new(true, false, true, true));
 
-        let input = CellIO {
-            column_1: true,
-            column_2: false,
-            row_1: true,
-            row_2: false,
-        };
+        let input = CellIO::new(true, false, true, false);
 
-        assert_eq!(
-            cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: true,
-                row_2: true,
-            }
-        );
+        assert_eq!(cell.eval_cell(input), CellIO::new(true, false, true, true));
     }
 
     #[test]
@@ -797,38 +611,18 @@ mod cell_tests {
 
         let cell = Cell::new(&order, &flags, fills);
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, false, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(true, false, false, false)
         );
 
-        let input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: true,
-            row_2: false,
-        };
+        let input = CellIO::new(false, false, true, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: true,
-                row_2: false,
-            }
+            CellIO::new(false, false, true, false)
         );
     }
 
@@ -848,106 +642,40 @@ mod cell_tests {
 
         let cell = Cell::new(&order, &flags, fills);
 
-        let mut input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: false,
-            row_2: false,
-        };
+        let mut input = CellIO::new(false, false, false, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: false,
-                row_2: false,
-            }
+            CellIO::new(true, false, false, false)
         );
 
-        input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: true,
-            row_2: false,
-        };
+        input = CellIO::new(false, false, true, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: true,
-                row_2: false,
-            }
+            CellIO::new(false, false, true, false)
         );
 
-        input = CellIO {
-            column_1: true,
-            column_2: false,
-            row_1: true,
-            row_2: false,
-        };
+        input = CellIO::new(true, false, true, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: true,
-                row_2: false,
-            }
+            CellIO::new(false, false, true, false)
         );
 
-        input = CellIO {
-            column_1: true,
-            column_2: false,
-            row_1: true,
-            row_2: false,
-        };
+        input = CellIO::new(true, false, true, false);
 
         assert_eq!(
             cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: true,
-                row_2: false,
-            }
+            CellIO::new(false, false, true, false)
         );
 
-        input = CellIO {
-            column_1: false,
-            column_2: false,
-            row_1: true,
-            row_2: true,
-        };
+        input = CellIO::new(false, false, true, true);
 
-        assert_eq!(
-            cell.eval_cell(input),
-            CellIO {
-                column_1: false,
-                column_2: false,
-                row_1: true,
-                row_2: true,
-            }
-        );
+        assert_eq!(cell.eval_cell(input), CellIO::new(false, false, true, true));
 
-        input = CellIO {
-            column_1: true,
-            column_2: false,
-            row_1: true,
-            row_2: true,
-        };
+        input = CellIO::new(true, false, true, true);
 
-        assert_eq!(
-            cell.eval_cell(input),
-            CellIO {
-                column_1: true,
-                column_2: false,
-                row_1: true,
-                row_2: true,
-            }
-        );
+        assert_eq!(cell.eval_cell(input), CellIO::new(true, false, true, true));
     }
 }

@@ -40,13 +40,81 @@ impl Grid {
 }
 
 #[derive(Debug, Clone)]
-pub struct FPGA {
-    grid: Grid,
+pub struct FpgaIO {
+    io: Box<[u8]>,
+    trim: u8,
 }
 
-#[derive(Debug)]
-pub enum Error {
-    WrongInputSize { expected: usize, got: usize },
+impl FpgaIO {
+    #[inline]
+    pub fn new(mut capacity: usize) -> Self {
+        capacity += 2;
+        let pagination = capacity / 8 + (capacity % 8 > 0) as usize;
+        let mut io = Vec::with_capacity(pagination);
+
+        for _ in 0..pagination {
+            io.push(0);
+        }
+
+        Self {
+            io: io.into_boxed_slice(),
+            trim: ((capacity - 2) % 8) as u8,
+        }
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.io.len()
+    }
+
+    #[inline]
+    fn cell_io_at(&self, cell_pos: usize) -> CellIO {
+        let pagination = cell_pos / 8;
+        let trim = cell_pos % 8;
+
+        let mut bits: u8 = (self.io[pagination] >> trim) & 0b11;
+        bits |= (self.io[self.len() - 1] >> 4) & 0b1100;
+
+        CellIO::from_bits(bits).unwrap()
+    }
+
+    fn set(&mut self, cell_pos: usize, value: CellIO) {
+        let pagination = cell_pos / 8;
+        let trim = cell_pos % 8;
+
+        let mut bits: u8 = value.bits();
+        self.io[pagination] &= !(0b11 << trim);
+        self.io[pagination] |= (bits & 0b11) << trim;
+        bits = bits << 4;
+        self.io[self.len() - 1] &= !(0b11 << 6);
+        self.io[self.len() - 1] |= (bits & (0b11 << 2)) << 6;
+    }
+
+    fn reset_row_io(&mut self) {
+        self.io[self.len() - 1] &= !(0b11 << 6);
+    }
+}
+
+impl From<Box<[bool]>> for FpgaIO {
+    fn from(value: Box<[bool]>) -> Self {
+        let capacity = value.len() + 2;
+        let pagination = capacity / 8 + (capacity % 8 > 0) as usize;
+        let mut flags = vec![0u8; pagination];
+
+        for (i, val) in value.iter().enumerate() {
+            flags[i / 8] |= (*val as u8) << (i % 8);
+        }
+
+        Self {
+            io: flags.into_boxed_slice(),
+            trim: ((capacity - 2) % 8) as u8,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FPGA {
+    grid: Grid,
 }
 
 impl FPGA {
@@ -54,50 +122,28 @@ impl FPGA {
         Self { grid: grid.clone() }
     }
 
-    pub fn eval(&self, mut input: Vec<bool>) -> Result<Vec<bool>, Error> {
-        if input.len() != self.grid.width {
-            return Err(Error::WrongInputSize {
-                expected: self.grid.width,
-                got: input.len(),
-            });
+    pub fn eval(&self, mut input: FpgaIO) -> Result<FpgaIO, &'static str> {
+        if input.len() * 8 + input.trim as usize - 2 != self.grid.width * 2 {
+            return Err("FpgaIO size does not match grid input requirements");
         }
-
-        input.push(false);
-        input.push(false);
 
         let mut i = 0;
         let mut j = 0;
         let mut dir: i8 = 1;
 
         for _ in 0..self.grid.height * (self.grid.width) {
-            let CellIO {
-                column_1,
-                column_2,
-                row_1,
-                row_2,
-            } = self.grid.get(j, i).unwrap().eval_cell(CellIO {
-                column_1: input[2 * i],
-                column_2: input[2 * i + 1],
-                row_1: input[self.grid.width - 2],
-                row_2: input[self.grid.width - 1],
-            });
+            let cell_io = self.grid.get(j, i).unwrap().eval_cell(input.cell_io_at(i));
 
-            input[2 * i] = column_1;
-            input[2 * i + 1] = column_2;
-            input[self.grid.width - 2] = row_1;
-            input[self.grid.width - 1] = row_2;
+            input.set(i, cell_io);
 
             if (i == self.grid.width - 1 && dir == 1) || i == 0 && dir == -1 {
                 dir *= -1;
                 j += 1;
-                input[self.grid.width - 2] = false;
-                input[self.grid.width - 1] = false;
+                input.reset_row_io();
             } else {
                 i = (i as isize + dir as isize) as usize;
             }
         }
-        input.pop();
-        input.pop();
 
         Ok(input)
     }

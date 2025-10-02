@@ -291,7 +291,7 @@ impl Cell {
 
 #[cfg(test)]
 mod cell_tests {
-    use crate::fpga::cell::{ActivationOrder, Cell, CellFlags, Fills};
+    use crate::cell::{ActivationOrder, Cell, CellFlags, Fills};
 
     impl CellFlags {
         const FIXED_BLOCKS: u8 = 9;

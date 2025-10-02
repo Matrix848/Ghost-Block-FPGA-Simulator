@@ -1,43 +1,8 @@
-use crate::fpga::cell::{Cell, CellIO};
+use crate::cell::{Cell, CellIO};
 use serde::{Deserialize, Serialize};
 
 #[allow(unused)]
 pub(crate) mod cell;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Grid {
-    width: usize,
-    height: usize,
-    data: Vec<Cell>,
-}
-
-impl Grid {
-    fn new(width: usize, height: usize) -> Self {
-        let init = Cell::default();
-
-        Self {
-            width,
-            height,
-            data: vec![init; width * height],
-        }
-    }
-
-    fn get(&self, row: usize, col: usize) -> Option<&Cell> {
-        if row < self.height && col < self.width {
-            Some(&self.data[row * self.width + col])
-        } else {
-            None
-        }
-    }
-
-    fn get_mut(&mut self, row: usize, col: usize) -> Option<&mut Cell> {
-        if row < self.height && col < self.width {
-            Some(&mut self.data[row * self.width + col])
-        } else {
-            None
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct FpgaIO {
@@ -112,18 +77,42 @@ impl From<Box<[bool]>> for FpgaIO {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FPGA {
-    grid: Grid,
+    width: usize,
+    height: usize,
+    data: Vec<Cell>,
 }
 
 impl FPGA {
-    pub fn new(grid: &Grid) -> Self {
-        Self { grid: grid.clone() }
+    pub fn new(width: usize, height: usize) -> Self {
+        let init = Cell::default();
+
+        Self {
+            width,
+            height,
+            data: vec![init; width * height],
+        }
+    }
+
+    pub fn get(&self, row: usize, col: usize) -> Option<&Cell> {
+        if row < self.height && col < self.width {
+            Some(&self.data[row * self.width + col])
+        } else {
+            None
+        }
+    }
+
+    pub fn get_mut(&mut self, row: usize, col: usize) -> Option<&mut Cell> {
+        if row < self.height && col < self.width {
+            Some(&mut self.data[row * self.width + col])
+        } else {
+            None
+        }
     }
 
     pub fn eval(&self, mut input: FpgaIO) -> Result<FpgaIO, &'static str> {
-        if input.len() * 8 + input.trim as usize - 2 != self.grid.width * 2 {
+        if input.len() * 8 + input.trim as usize - 2 != self.width * 2 {
             return Err("FpgaIO size does not match grid input requirements");
         }
 
@@ -131,12 +120,12 @@ impl FPGA {
         let mut j = 0;
         let mut dir: i8 = 1;
 
-        for _ in 0..self.grid.height * (self.grid.width) {
-            let cell_io = self.grid.get(j, i).unwrap().eval_cell(input.cell_io_at(i));
+        for _ in 0..self.height * (self.width) {
+            let cell_io = self.get(j, i).unwrap().eval_cell(input.cell_io_at(i));
 
             input.set(i, cell_io);
 
-            if (i == self.grid.width - 1 && dir == 1) || i == 0 && dir == -1 {
+            if (i == self.width - 1 && dir == 1) || i == 0 && dir == -1 {
                 dir *= -1;
                 j += 1;
                 input.reset_row_io();

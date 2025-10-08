@@ -1,18 +1,29 @@
-use bitflags::{Flags, bitflags};
+use crate::impl_set_range;
+use bitflags::{bitflags, Flags};
+use serde::de::EnumAccess;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 #[repr(u8)]
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Selector {
-    Column1,
-    Column2,
-    Row1,
-    Row2,
+    Column1 = 0,
+    Column2 = 1,
+    Row1 = 2,
+    Row2 = 3,
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
-pub(crate) struct ActivationOrder([Selector; 4]);
+pub struct ActivationOrder([Selector; 4]);
+
+impl IntoIterator for ActivationOrder {
+    type Item = Selector;
+    type IntoIter = core::array::IntoIter<Selector, 4>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
 
 impl Default for ActivationOrder {
     fn default() -> Self {
@@ -26,12 +37,94 @@ impl Default for ActivationOrder {
 }
 
 impl ActivationOrder {
-    pub(crate) fn new(order: [Selector; 4]) -> Result<Self, &'static str> {
+    pub fn new(order: [Selector; 4]) -> Result<Self, &'static str> {
         let set: HashSet<_> = order.iter().collect();
         if set.len() != 4 {
             return Err("Duplicate enum variants not allowed");
         }
         Ok(ActivationOrder(order))
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+pub struct Fills([u8; 4]);
+
+impl Fills {
+    #[inline]
+    fn new(c1: u8, c2: u8, r1: u8, r2: u8) -> Self {
+        Self([c1, c2, r1, r2])
+    }
+
+    #[inline]
+    fn set(&mut self, target: u8, val: u8) {
+        self.0[target as usize] = val;
+    }
+
+    #[inline]
+    fn get(&self, target: u8) -> u8 {
+        self.0[target as usize]
+    }
+}
+
+bitflags! {
+    #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
+    pub struct CellIO: u8 {
+        const COLUMN_1 = 1 << 0;
+        const COLUMN_2 = 1 << 1;
+        const ROW_1 = 1 << 2;
+        const ROW_2 = 1 << 3;
+    }
+}
+
+impl CellIO {
+    #[inline]
+    pub fn new(c1: bool, c2: bool, r1: bool, r2: bool) -> Self {
+        let mut var = CellIO::empty();
+        var.set(CellIO::COLUMN_1, c1);
+        var.set(CellIO::COLUMN_2, c2);
+        var.set(CellIO::ROW_1, r1);
+        var.set(CellIO::ROW_2, r2);
+        var
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+    pub struct CellFlags: u16 {
+        const JC1_R1 = 1 << 0;
+        const JC1_R2 = 1 << 1;
+        const JC2_R1 = 1 << 2;
+        const JC2_R2 = 1 << 3;
+        const NOT_C1 = 1 << 4;
+        const NOT_C2 = 1 << 5;
+        const C1_OUT = 1 << 6;
+        const C2_OUT = 1 << 7;
+        const R1_OUT = 1 << 8;
+        const R2_OUT = 1 << 9;
+        const STILL_C1 = 1 << 10;
+        const STILL_C2 = 1 << 11;
+        const STILL_R1 = 1 << 12;
+    }
+}
+
+impl_set_range!(CellIO, CellFlags);
+
+impl Default for CellFlags {
+    #[inline]
+    fn default() -> Self {
+        let mut flags = CellFlags::empty();
+        flags.set_range(10, 3);
+        flags
+    }
+}
+
+impl CellFlags {
+    // Sets the various STILL_XY as 1, this is the intended method to create CellFlags
+    #[inline]
+    fn from_bits_checked(bits: u16) -> Self {
+        let mut flags = CellFlags::from_bits_truncate(bits);
+        flags.set_range(10, 3);
+        flags
     }
 }
 
@@ -67,6 +160,7 @@ impl TargetGroup<5> {
 }
 
 impl From<TargetGroup<5>> for TargetGroup<3> {
+    #[inline]
     fn from(src: TargetGroup<5>) -> Self {
         Self {
             target: src.target,
@@ -87,107 +181,16 @@ impl TargetGroup<3> {
 }
 
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
-pub struct Fills([u8; 4]);
-
-impl Fills {
-    fn new(c1: u8, c2: u8, r1: u8, r2: u8) -> Self {
-        Self([c1, c2, r1, r2])
-    }
-
-    #[inline]
-    fn set(&mut self, target: u8, val: u8) {
-        self.0[target as usize] = val;
-    }
-
-    #[inline]
-    fn get(&self, target: u8) -> u8 {
-        self.0[target as usize]
-    }
-}
-
-bitflags! {
-    #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
-    pub struct CellIO: u8 {
-        const COLUMN_1 = 1 << 0;
-        const COLUMN_2 = 1 << 1;
-        const ROW_1 = 1 << 2;
-        const ROW_2 = 1 << 3;
-    }
-}
-
-impl CellIO {
-    pub fn new(c1: bool, c2: bool, r1: bool, r2: bool) -> Self {
-        let mut var = CellIO::empty();
-        var.set(CellIO::COLUMN_1, c1);
-        var.set(CellIO::COLUMN_2, c2);
-        var.set(CellIO::ROW_1, r1);
-        var.set(CellIO::ROW_2, r2);
-        var
-    }
-}
-
-bitflags! {
-     #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
-    pub struct CellFlags: u16 {
-        const JC1_R1= 1 << 0;
-        const JC1_R2= 1 << 1;
-        const JC2_R1= 1 << 2;
-        const JC2_R2= 1 << 3;
-        const NOT_C1 = 1 << 4;
-        const NOT_C2= 1 << 5;
-        const C1_OUT = 1 << 6;
-        const C2_OUT= 1 << 7;
-        const R1_OUT= 1 << 8;
-        const R2_OUT= 1 << 9;
-        const STILL_C1 = 1 << 10;
-        const STILL_C2 = 1 << 11;
-        const STILL_R1 = 1 << 12;
-    }
-}
-
-macro_rules! impl_set_range {
-    ( $( $flags:ty ),+ ) => {
-        $(
-            impl $flags {
-                pub fn set_range(&mut self, pos: u8, range: u8) {
-                    let mask = (((1 << range) - 1) << pos) as <$flags as bitflags::Flags>::Bits;
-                    let new_flags = <$flags>::from_bits_truncate(self.bits() | mask);
-                    *self = new_flags;
-                }
-            }
-        )+
-    };
-}
-
-impl_set_range!(CellIO, CellFlags);
-
-impl Default for CellFlags {
-    fn default() -> Self {
-        let mut flags = CellFlags::empty();
-        flags.set_range(10, 3);
-        flags
-    }
-}
-
-impl CellFlags {
-    // Sets the various STILL_XY as 1, this is the intended method to create CellFlags
-    fn from_bits_checked(bits: u16) -> Self {
-        let mut flags = CellFlags::from_bits_truncate(bits);
-        flags.set_range(10, 3);
-        flags
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
 pub struct Cell {
-    activation_order: ActivationOrder,
-    flags: CellFlags,
-    fills: Fills,
+    pub activation_order: ActivationOrder,
+    pub flags: CellFlags,
+    pub fills: Fills,
 }
 
 impl Cell {
     const FIXED_BLOCKS: u8 = 9;
 
+    #[inline]
     pub fn new(activation_order: &ActivationOrder, flags: &CellFlags, fills: Fills) -> Self {
         let mut flags = flags.clone();
         flags.set_range(10, 3);
@@ -208,6 +211,7 @@ impl Cell {
             + (self.flags.contains(group.flags[2]) as u8)
     }
 
+    #[inline]
     fn sim_gate(&mut self, column_input: bool, group: TargetGroup<5>) -> bool {
         let mut count: u8 = self.count(column_input, TargetGroup::from(group));
 
@@ -223,6 +227,7 @@ impl Cell {
         out
     }
 
+    #[inline]
     fn sim_row1(&mut self, row_input: bool) -> bool {
         let mut count: u8 = self.count(row_input, TargetGroup::R1)
             + (self.flags.contains(CellFlags::NOT_C1) as u8)
@@ -242,6 +247,7 @@ impl Cell {
         out
     }
 
+    #[inline]
     fn sim_row2(&mut self, row_input: bool) -> bool {
         let mut count: u8 = self.count(row_input, TargetGroup::R2);
 
@@ -253,6 +259,7 @@ impl Cell {
         out
     }
 
+    #[inline]
     pub fn eval_cell(&self, mut input: CellIO) -> CellIO {
         let mut rtm_cell = self.clone();
 

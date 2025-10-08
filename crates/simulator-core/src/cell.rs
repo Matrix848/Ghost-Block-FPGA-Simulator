@@ -1,5 +1,5 @@
 use crate::impl_set_range;
-use bitflags::{bitflags, Flags};
+use bitflags::{Flags, bitflags};
 use serde::de::EnumAccess;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

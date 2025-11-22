@@ -29,7 +29,7 @@ impl File {
 
     pub fn open_file_dialog(&mut self) -> Result<()> {
         self.path = FileDialog::new()
-            .add_filter("FPGA Configuration File", &["fpga, bit"])
+            .add_filter("FPGA Configuration File", &["fpga", "bit"])
             .add_filter("All Files", &["*"])
             .set_title("Choose a FPGA configuration file")
             .pick_file();
@@ -41,7 +41,7 @@ impl File {
 
     pub fn save_as(&mut self) -> Result<()> {
         self.path = FileDialog::new()
-            .add_filter("FPGA Configuration File", &["fpga, bit"])
+            .add_filter("FPGA Configuration File", &["fpga", "bit"])
             .add_filter("All Files", &["*"])
             .set_title("Choose a FPGA configuration file")
             .save_file();

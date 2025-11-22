@@ -7,8 +7,11 @@ pub mod macros;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FPGA {
+    // Width of the FPGA, this is the number of columns
     width: usize,
+    // Height of the FPGA, this is the number of rows
     height: usize,
+    // Vector of the FPGA cells
     data: Vec<Cell>,
 }
 
@@ -88,9 +91,9 @@ pub struct FpgaIO {
 
 impl FpgaIO {
     #[inline]
-    pub fn new(mut capacity: usize) -> Self {
-        capacity += 2;
-        let pagination = capacity / 8 + (capacity % 8 > 0) as usize;
+    pub fn new(mut length: usize) -> Self {
+        length += 2;
+        let pagination = length / 8 + (length % 8 > 0) as usize;
         let mut io = Vec::with_capacity(pagination);
 
         for _ in 0..pagination {
@@ -99,7 +102,7 @@ impl FpgaIO {
 
         Self {
             io: io.into_boxed_slice(),
-            trim: ((capacity - 2) % 8) as u8,
+            trim: ((length - 2) % 8) as u8,
         }
     }
 
@@ -116,11 +119,11 @@ impl FpgaIO {
         let mut bits: u8 = (self.io[pagination] >> trim) & 0b11;
         bits |= (self.io[self.len() - 1] >> 4) & 0b1100;
 
-        CellIO::from_bits(bits).unwrap()
+        CellIO::from_bits_truncate(bits)
     }
 
     #[inline]
-    fn set(&mut self, cell_pos: usize, value: CellIO) {
+    pub fn set(&mut self, cell_pos: usize, value: CellIO) {
         let pagination = cell_pos / 8;
         let trim = cell_pos % 8;
 
@@ -135,6 +138,17 @@ impl FpgaIO {
     #[inline]
     fn reset_row_io(&mut self) {
         self.io[self.len() - 1] &= !(0b11 << 6);
+    }
+
+    #[inline]
+    pub fn get_value_vec(&self) -> Box<[bool]> {
+        let mut io_vec = vec![false; self.io.len() - 1 + self.trim as usize].into_boxed_slice();
+        for byte in self.io.as_ref() {
+            for bit in 0..8 {
+                io_vec[(byte * 8 + bit) as usize] = (byte & (1 << bit)) != 0;
+            }
+        }
+        io_vec
     }
 }
 
@@ -153,5 +167,25 @@ impl From<Box<[bool]>> for FpgaIO {
             io: flags.into_boxed_slice(),
             trim: ((capacity - 2) % 8) as u8,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::FpgaIO;
+
+    #[test]
+    fn new_fpga_io() {
+        let fpga_io = FpgaIO::new(6);
+        assert_eq!(fpga_io.io.len(), 1);
+        assert_eq!(fpga_io.trim, 6);
+
+        let fpga_io = FpgaIO::new(8);
+        assert_eq!(fpga_io.io.len(), 2);
+        assert_eq!(fpga_io.trim, 0);
+
+        let fpga_io = FpgaIO::new(20);
+        assert_eq!(fpga_io.io.len(), 3);
+        assert_eq!(fpga_io.trim, 4);
     }
 }

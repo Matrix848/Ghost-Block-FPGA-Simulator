@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-iced = "0.13.1"
 postcard = { version = "1.1.3", features = ["alloc"] }
 simulator-core = { version = "0.1.0", path = "crates/simulator-core" }
 rfd = "0.15.4"
 anyhow = "1.0.100"
-iced_aw = "0.12.2"
+ratatui = { version = "0.29.0", features = ["all-widgets"] }
+better-panic = "0.3.0"

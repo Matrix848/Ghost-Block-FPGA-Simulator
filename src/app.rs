@@ -1,12 +1,15 @@
 use crossterm::event::KeyEvent;
+use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::Rect;
+use ratatui::widgets::{Block, Borders};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
+use crate::components::console::Console;
 use crate::{
     action::Action,
-    components::{Component, fps::FpsCounter, home::Home},
+    components::Component,
     config::Config,
     tui::{Event, Tui},
 };
@@ -17,7 +20,6 @@ pub struct App {
     frame_rate: f64,
     components: Vec<Box<dyn Component>>,
     should_quit: bool,
-    should_suspend: bool,
     mode: Mode,
     last_tick_key_events: Vec<KeyEvent>,
     action_tx: mpsc::UnboundedSender<Action>,
@@ -27,7 +29,7 @@ pub struct App {
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Mode {
     #[default]
-    Home,
+    Normal,
 }
 
 impl App {
@@ -36,11 +38,10 @@ impl App {
         Ok(Self {
             tick_rate,
             frame_rate,
-            components: vec![Box::new(Home::new()), Box::new(FpsCounter::default())],
+            components: vec![Box::new(Console::new())],
             should_quit: false,
-            should_suspend: false,
             config: Config::new()?,
-            mode: Mode::Home,
+            mode: Mode::Normal,
             last_tick_key_events: Vec::new(),
             action_tx,
             action_rx,
@@ -49,7 +50,7 @@ impl App {
 
     pub async fn run(&mut self) -> color_eyre::Result<()> {
         let mut tui = Tui::new()?
-            // .mouse(true) // uncomment this line to enable mouse support
+            //.mouse(true) // uncomment this line to enable mouse support
             .tick_rate(self.tick_rate)
             .frame_rate(self.frame_rate);
         tui.enter()?;
@@ -64,20 +65,14 @@ impl App {
             component.init(tui.size()?)?;
         }
 
-        let action_tx = self.action_tx.clone();
         loop {
             self.handle_events(&mut tui).await?;
             self.handle_actions(&mut tui)?;
-            if self.should_suspend {
-                tui.suspend()?;
-                action_tx.send(Action::Resume)?;
-                action_tx.send(Action::ClearScreen)?;
-                // tui.mouse(true);
-                tui.enter()?;
-            } else if self.should_quit {
+            if self.should_quit {
                 tui.stop()?;
                 break;
             }
+            tui.show_cursor()?;
         }
         tui.exit()?;
         Ok(())
@@ -139,8 +134,6 @@ impl App {
                     self.last_tick_key_events.drain(..);
                 }
                 Action::Quit => self.should_quit = true,
-                Action::Suspend => self.should_suspend = true,
-                Action::Resume => self.should_suspend = false,
                 Action::ClearScreen => tui.terminal.clear()?,
                 Action::Resize(w, h) => self.handle_resize(tui, w, h)?,
                 Action::Render => self.render(tui)?,
@@ -163,14 +156,28 @@ impl App {
 
     fn render(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
         tui.draw(|frame| {
-            for component in self.components.iter_mut() {
-                if let Err(err) = component.draw(frame, frame.area()) {
+            let horizontal_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .margin(0)
+                .constraints(vec![Constraint::Percentage(70), Constraint::Percentage(30)])
+                .split(frame.area());
+            frame.render_widget(Block::new().borders(Borders::ALL), horizontal_layout[1]);
+
+            let vertical_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(0)
+                .constraints(vec![Constraint::Percentage(65), Constraint::Percentage(35)])
+                .split(horizontal_layout[0]);
+
+            for (component, layout) in self.components.iter_mut().zip([vertical_layout[1]]) {
+                if let Err(err) = component.draw(frame, layout) {
                     let _ = self
                         .action_tx
                         .send(Action::Error(format!("Failed to draw: {:?}", err)));
                 }
             }
         })?;
+
         Ok(())
     }
 }

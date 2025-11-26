@@ -1,3 +1,4 @@
-[keybindings.Home]
+[keybindings.Normal]
 "<Ctrl-q>" = "Quit"
+"<Ctrl-Q>" = "Quit"
 "<Ctrl-z>" = "Suspend"
